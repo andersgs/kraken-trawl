@@ -44,28 +44,51 @@ points to the aspera key for downloading from `NCBI`. For a guide on obtaining
 
 ## Configuration
 
-The current version relies on two environmental variables to work properly:
+The current version relies on an environmental variable to work properly:
 
 * `ASPERA_KEY`
-* `EMAIL`
 
 Either type the following before using `kraken-trawl`, or paste this line in to your
  `bash_profile`:
 
 `export ASPERA_KEY=/path/to/asperakey/aspera_key.openssh`
 
-If you wish to use the option of downloading from a species list, you must also
-specify an EMAIL environmental variable for use in querying `NCBI` with `Entrez`.
-Just type the following in your command line before running `kraken-trawl`, or
-add this line to your `bash profile`:
-
-`export EMAIL=my.valid.email@mailserver.com`
-
-You may ask, why am I using environment for configuration? The reason is that this
+You may ask, why am I using environment variables for configuration? The reason is that this
 is currently considered best practice in tool development. More here: [12factor app](https://12factor.net/config).
 
 ## Options
 
+```
+Usage: kraken-trawl.py [OPTIONS]
+
+Options:
+  --assemb_file TEXT  assembly_summary file
+  --kraken_db TEXT    name of kraken db
+  --taxon_list TEXT   give it a taxon list to filter the
+                      assembly_summary.
+  --include_human     include the reference human genome.
+  --filter_opt TEXT   Can be all, strict, moderate, or liberal.
+  --outdir TEXT       Where to place downloaded genomes.
+  --no_log            Do NOT output a tab-delimited list of genomes added
+  --help              Show this message and exit.
+```
+
+## Output
+
+1. A series of folders each containing a `*.genomic.gbff.gz` file. Because we
+    are using `aspera` if the folder structure is maintained, only novel genomes
+    will be downloaded subsequently.
+2. an `aspera_src_dest.txt` file containing the `SRC` and `DEST` for each genome.
+    This file is used to for the `aspera` download .
+3. individual genome `*.fna` files in the `<kraken_db>/libraries/added` folder.
+4. a `log` file, with a `tab-delimited` information on each downloaded file:
+    * Organism --- the organism name, including any strain names
+    * Accession --- the accession id
+    * RefSeq --- the RefSeq category, if any
+    * Assembly Level --- the assembly level (i.e., `Complete Genome`, `Chromosome`, `Scaffold` , or `Contig`)
+    * Source  --- the location of the `genbank` file on the `NCBI` servers
+    * Destination --- the local folder with the `genbank` file
+5. a `missing_taxon.txt` --- a list of taxons for which no genomes were found
 
 ## Examples
 
