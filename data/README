@@ -1,0 +1,3 @@
+# making the adapter FASTA file
+
+awk 'BEGIN{OFS=""} {if($0 ~/^>/) print ">seq",NR,"|kraken:taxid|32630 ",substr($1,2); else print $0;}'' adapter_tmp.fasta > adapter.fasta

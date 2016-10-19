@@ -14,6 +14,7 @@ from Bio import SeqIO
 from Bio import Entrez
 import tempfile
 import sys
+import pkg_resources
 
 ### SOME BASIC CHECK FUNCTIONS  ################################################
 
@@ -43,6 +44,27 @@ def check_kraken_exists():
         print("Please install kraken", file = sys.stderr)
         raise IOError
     return(cmd)
+
+### SOME SETTING THE SCENE FUNCTIONS ###########################################
+
+def create_kraken_db(path, db_name):
+    '''
+    A function to create the folder structure for a new kraken database, if needed
+    '''
+    db_path = os.path.join( os.path.abspath(path), db_name)
+    folders_to_make = [
+        os.path.join(db_path, 'library' ),
+        os.path.join(db_path, 'library', 'added' ),
+        os.path.join(db_path, 'taxonomy' )
+    ]
+
+    try:
+        for folder in folters_to_make:
+            os.makedir(folder)
+    except:
+        print("Was unable to make the folders necessary to create a the new kraken DB {}".format(name), file = sys.stderr)
+        raise IOError
+    return
 
 ### SOME FILE LOADING FUNCTIONS ################################################
 
@@ -222,6 +244,9 @@ def download_gbk(assemb_tab, cmd, outdir = '.'):
 
 ### LOADING GENOMES TO THE KRAKEN STAGGING AREA ################################
 
+def inject_adapters():
+
+
 def add_isolates(dic_list, db_name):
     for assembly in dic_list:
         print("Adding {} to kraken stagging area.".format(assembly['organism']), file = sys.stderr)
@@ -247,6 +272,18 @@ def add_isolates(dic_list, db_name):
         os.remove(fa_file)
     print("Added all {} assemblies to kraken stagging area. DB is ready to build".format(len(dic_list)), file = sys.stderr)
 
+### ACTUALLY BUILD THE DATABASE ################################################
+
+def kraken_build(cmd, db_name, threads = 16, kmer_len = 31, minz_len = 15, clean = True):
+    cmd = cmd + ' --build --db {} --threads {} --kmer-len {} --minimizer-len {}'.format(db_name, threads, kmer_len, minz_len)
+    if clean:
+        cmd = cmd + ' --clean'
+    print(cmd, file = sys.stderr)
+    p = subprocess.Popen( shlex.split(cmd))
+    p.communicate()
+    print("Finished building the database.", file = sys.stderr)
+
+
 ### GENERATE A LOG OF SEQUENCES ADDED TO THE DATABASE ##########################
 
 def generate_log(dic_list):
@@ -259,15 +296,19 @@ def generate_log(dic_list):
         fo.write(row)
     fo.close()
 
+
+
 @click.command()
 @click.option("--assemb_file", help = "assembly_summary file")
 @click.option("--kraken_db", help = "name of kraken db")
+@click.option("--create", "-c", help = "create a new database")
 @click.option("--taxon_list", help = "give it a taxon list to filter the assembly_summary.", default = None)
 @click.option("--include_human", help = "include the human reference genome", is_flag = True)
 @click.option("--filter_opt", help = "Can be all, strict, moderate, or liberal.", default = 'strict')
 @click.option("--outdir", help = "Where to place downloaded genomes.", default = ".")
 @click.option("--no_log", help = 'Do NOT output a tab-delimited list of genomes added', is_flag = True)
-def kraken_trawl(assemb_file, kraken_db, taxon_list, include_human, filter_opt, outdir, no_log):
+@click.option("--do_no_inject_adapters", help = "Do **not** add Illumina adapter and primer sequences to DB", is_flag = True, default = False)
+def kraken_trawl(assemb_file, kraken_db, create, taxon_list, include_human, filter_opt, outdir, no_log, inject_adapters):
     aspera_cmd = check_aspera_exists()
     kraken_cmd = check_kraken_exists()
     if outdir == '.':
