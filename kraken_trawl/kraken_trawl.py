@@ -55,7 +55,7 @@ def check_aspera_exists():
     except:
         print("Could not find the ASPERA_KEY Environment variable.", file = sys.stderr)
         raise IOError
-    cmd = cmd + ' -d --overwrite=diff -k2 -i ' + aspera_key + ' -Q -k1 -T -l500m --host=ftp-private.ncbi.nlm.nih.gov --user=anonftp --mode=recv --file-pair-list={} {}'
+    cmd = cmd + ' -d --overwrite=diff -k2 -i ' + aspera_key + ' -Q -k1 -T -l500m --host=ftp-private.ncbi.nlm.nih.gov --user=anonftp --mode=recv --file-manifest=text --file-manifest-path={} --file-pair-list={} {}'
     return(cmd)
 
 def check_kraken_exists():
@@ -69,6 +69,25 @@ def check_kraken_exists():
     return(cmd)
 
 ### SOME SETTING THE SCENE FUNCTIONS ###########################################
+
+def parse_aspera_manifest_file(path, files, new_name):
+    manifest_file = [f for f in os.listdir(path) if re.match("aspera-transfer", f)][0]
+    was_updated = {}
+    try:
+        fi = open(manifest_file, 'r')
+        file_log = [line.strip() for line in fi if re.search('^\"', line)]
+        fi.close()
+        for f in files:
+            log_line = [line for line in file_log if re.search(f, line)][0]
+            if re.search('0B', log_line):
+                was_updated[f] = False
+            else:
+                was_updated[f] = True
+    except:
+        print("Something went wrong when parsing the aspera transfer manifest file")
+        raise IOError
+    os.rename(manifest_file, new_name)
+    return was_updated
 
 def create_kraken_db_folder(path, db_name, cmd, ncbi_taxonomy_files ):
     '''
@@ -97,22 +116,32 @@ def create_kraken_db_folder(path, db_name, cmd, ncbi_taxonomy_files ):
         fo.write('{}\n{}\n'.format(fi,fi_dest))
         files_to_unzip.append(fi_dest)
     fo.close()
-    cmd = cmd.format("aspera_taxonomy_src_dest.txt", os.path.join( db_name, 'taxonomy'))
+    cmd = cmd.format(path, "aspera_taxonomy_src_dest.txt", os.path.join( db_name, 'taxonomy'))
     print(cmd, file = sys.stderr)
     p = subprocess.Popen( shlex.split(cmd))
     p.communicate()
+    was_updated = parse_aspera_manifest_file(path, files_to_unzip, "aspera_taxonomy_manifest.txt")
     for fi in files_to_unzip:
+        path_to_file = os.path.join( db_name, 'taxonomy', fi)
         if re.search('tar', fi):
-            cmd = 'tar xzvf {} -C {}'.format(os.path.join( db_name, 'taxonomy', fi), os.path.join( db_name, 'taxonomy'))
-            print(cmd, file = sys.stderr)
-            p = subprocess.Popen( shlex.split(cmd))
-            p.communicate()
+            if was_updated[fi]:
+                path_to_folder = os.path.join( db_name, 'taxonomy')
+                cmd = 'tar xzvf {} -C {}'.format(path_to_file, path_to_folder)
+                print(cmd, file = sys.stderr)
+                p = subprocess.Popen( shlex.split(cmd))
+                p.communicate()
+            else:
+                print("File {} was not updated in this transfer. Nothing to do.".format(fi), file = sys.stderr)
         else:
-            outfilename = fi.rstrip('.gz')
-            cmd = 'gunzip -c {} > {}'.format( os.path.join( db_name, 'taxonomy',fi), os.path.join( db_name, 'taxonomy', outfilename) )
-            print(cmd, file = sys.stderr)
-            p = subprocess.Popen( cmd, shell = True)
-            p.communicate()
+            if was_updated[fi]:
+                outfilename = fi.rstrip('.gz')
+                path_to_outfile = os.path.join( db_name, 'taxonomy', outfilename)
+                cmd = 'gunzip -c {} > {}'.format( path_to_file, path_to_outfile )
+                print(cmd, file = sys.stderr)
+                p = subprocess.Popen( cmd, shell = True)
+                p.communicate()
+            else:
+                print("File {} was not updated in this transfer. Nothing to do.".format(fi), file = sys.stderr)
     return db_path
 
 ### SOME FILE LOADING FUNCTIONS ################################################
@@ -288,10 +317,12 @@ def download_gbk(assemb_tab, cmd, outdir = '.'):
         fo.write("{}\n{}\n".format(assembly['source'], assembly['dest']))
     fo.close()
 
-    cmd = cmd.format('aspera_assemblies_src_dest.txt', outdir)
+    cmd = cmd.format(outdir, 'aspera_assemblies_src_dest.txt', outdir)
     print("Running the aspera cmd: {}".format(cmd), file = sys.stderr)
     p = subprocess.Popen( shlex.split(cmd))
     p.communicate()
+    files_to_check = [a['gbk_file'] for a in assembs_dic_list]
+    was_updated = parse_aspera_manifest_file(outdir, files_to_check, "aspera_assemblies_manifest.txt")
     print("Finisehd downloading all genomes.", file = sys.stderr)
     return assembs_dic_list
 
