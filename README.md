@@ -46,13 +46,13 @@ The easiest way of installing `kraken-trawl` is using `pip`:
 
 `pip install git+https://github.com/andersgs/kraken-trawl.git`
 
-Use the `--user` option to install locally:
+Use the `--user` option to install locally (by default in `$HOME/.local/bin`):
 
 `pip install --user git+https://github.com/andersgs/kraken-trawl.git`
 
-Use the `--install-option` to install the script in a particular location:
+Use the `--install-option` to install the script in a particular location (say you have some other folder on your `PATH` where you store scripts):
 
-`pip install --install-option="--install-scripts=$HOME/bin" --user git+hhttps://github.com/andersgs/kraken-trawl.git`
+`pip install --install-option="--install-scripts=$HOME/bin" --user git+https://github.com/andersgs/kraken-trawl.git`
 
 Once installed type the following:
 
