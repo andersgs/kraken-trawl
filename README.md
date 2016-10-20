@@ -59,18 +59,21 @@ is currently considered best practice in tool development. More here: [12factor 
 ## Options
 
 ```
-Usage: kraken-trawl.py [OPTIONS]
+Usage: kraken-trawl [OPTIONS]
 
 Options:
-  --assemb_file TEXT  assembly_summary file
-  --kraken_db TEXT    name of kraken db
-  --taxon_list TEXT   give it a taxon list to filter the
-                      assembly_summary.
-  --include_human     include the reference human genome.
-  --filter_opt TEXT   Can be all, strict, moderate, or liberal.
-  --outdir TEXT       Where to place downloaded genomes.
-  --no_log            Do NOT output a tab-delimited list of genomes added
-  --help              Show this message and exit.
+  --assemb_file TEXT       assembly_summary file
+  --kraken_db TEXT         name of kraken db
+  -c, --create TEXT        create a new database
+  --taxon_list TEXT        give it a taxon list to filter the
+                           assembly_summary.
+  --include_human          include the human reference genome
+  --filter_opt TEXT        Can be all, strict, moderate, or liberal.
+  --outdir TEXT            Where to place downloaded genomes.
+  --no_log                 Do NOT output a tab-delimited list of genomes added
+  --do_not_inject_adapters  Do **not** add Illumina adapter and primer
+                           sequences to DB
+  --help                   Show this message and exit.
 ```
 
 ## Output

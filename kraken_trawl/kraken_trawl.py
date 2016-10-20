@@ -16,6 +16,29 @@ import tempfile
 import sys
 import pkg_resources
 
+### SOME CONSTANTS #############################################################
+
+ncbi_host = 'ftp-private.ncbi.nlm.nih.gov'
+ncbi_user = 'anonftp'
+
+taxonomy_files = [
+    '/pub/taxonomy/gi_taxid_nucl.dmp.gz',
+    '/pub/taxonomy/taxdump.tar.gz',
+]
+
+assembly_files = {
+    'general':'/genomes/ASSEMBLY_REPORTS/assembly_summary_genbank.txt',
+    'refseq': '/genomes/ASSEMBLY_REPORTS/assembly_summary_refseq.txt',
+    'archea': '/genomes/refseq/archaea/assembly_summary.txt',
+    'bacteria': '/genomes/refseq/bacteria/assembly_summary.txt',
+    'fungi': '/genomes/refseq/fungi/assembly_summary.txt'
+}
+
+plamids = {
+    'plasmid1': '/refseq/release/plasmid/plasmid.1.genomic.gbff.gz',
+    'plasmid2': '/refseq/release/plasmid/plasmid.2.genomic.gbff.gz'
+}
+
 ### SOME BASIC CHECK FUNCTIONS  ################################################
 
 def check_aspera_exists():
@@ -47,24 +70,52 @@ def check_kraken_exists():
 
 ### SOME SETTING THE SCENE FUNCTIONS ###########################################
 
-def create_kraken_db(path, db_name):
+def create_kraken_db_folder(path, db_name, cmd, ncbi_taxonomy_files ):
     '''
     A function to create the folder structure for a new kraken database, if needed
     '''
     db_path = os.path.join( os.path.abspath(path), db_name)
     folders_to_make = [
+        db_path,
         os.path.join(db_path, 'library' ),
         os.path.join(db_path, 'library', 'added' ),
         os.path.join(db_path, 'taxonomy' )
     ]
 
+    print("Folders: {}".format( folders_to_make ))
+
     try:
-        for folder in folters_to_make:
-            os.makedir(folder)
+        for folder in folders_to_make:
+            os.mkdir(folder)
     except:
-        print("Was unable to make the folders necessary to create a the new kraken DB {}".format(name), file = sys.stderr)
-        raise IOError
-    return
+        print("Necessary folders for kraken DB {} already exist. Proceeding will overwrite somethings.".format(db_name), file = sys.stderr)
+        #raise IOError
+
+    fo = open("aspera_taxonomy_src_dest.txt", 'w')
+    files_to_unzip = []
+    for fi in ncbi_taxonomy_files:
+        fi_name = os.path.basename(fi)
+        fi_dest = fi_name
+        fo.write('{}\n{}\n'.format(fi,fi_dest))
+        files_to_unzip.append(fi_dest)
+    fo.close()
+    cmd = cmd.format("aspera_taxonomy_src_dest.txt", os.path.join( db_name, 'taxonomy'))
+    print(cmd, file = sys.stderr)
+    p = subprocess.Popen( shlex.split(cmd))
+    p.communicate()
+    for fi in files_to_unzip:
+        if re.search('tar', fi):
+            cmd = 'tar xzvf {} -C {}'.format(os.path.join( db_name, 'taxonomy', fi), os.path.join( db_name, 'taxonomy'))
+            print(cmd, file = sys.stderr)
+            p = subprocess.Popen( shlex.split(cmd))
+            p.communicate()
+        else:
+            outfilename = fi.rstrip('.gz')
+            cmd = 'gunzip -c {} > {}'.format( os.path.join( db_name, 'taxonomy',fi), os.path.join( db_name, 'taxonomy', outfilename) )
+            print(cmd, file = sys.stderr)
+            p = subprocess.Popen( cmd, shell = True)
+            p.communicate()
+    return db_path
 
 ### SOME FILE LOADING FUNCTIONS ################################################
 
@@ -229,13 +280,13 @@ def download_gbk(assemb_tab, cmd, outdir = '.'):
     the -k2 means files are compared with sparse checksums.
     '''
 
-    fo = open("aspera_src_dest.txt", 'w')
+    fo = open("aspera_assemblies_src_dest.txt", 'w')
     assembs_dic_list = [parse_aseemb_rows(row) for row in assemb_tab.itertuples()]
     for assembly in assembs_dic_list:
         fo.write("{}\n{}\n".format(assembly['source'], assembly['dest']))
     fo.close()
 
-    cmd = cmd.format('aspera_src_dest.txt', outdir)
+    cmd = cmd.format('aspera_assemblies_src_dest.txt', outdir)
     print("Running the aspera cmd: {}".format(cmd), file = sys.stderr)
     p = subprocess.Popen( shlex.split(cmd))
     p.communicate()
@@ -244,8 +295,19 @@ def download_gbk(assemb_tab, cmd, outdir = '.'):
 
 ### LOADING GENOMES TO THE KRAKEN STAGGING AREA ################################
 
-def inject_adapters():
+def kraken_add(db_name, fasta_file, clean = True):
+    cmd = "kraken-build --add-to-library {} --db {}".format( fasta_file, db_name )
+    print(cmd, file = sys.stderr)
+    cmd = shlex.split(cmd)
+    p = subprocess.check_output(cmd)
+    if clean:
+        os.remove(fasta_file)
 
+def inject_adapters(db_name):
+    adapter_fasta = pkg_resources.resource_filename(__name__, os.path.join("data", "adapter.fasta"))
+    print(adapter_fasta, file = sys.stderr)
+    kraken_add(db_name, adapter_fasta, False)
+    print("Added Illumina adapters to {}".format(db_name), file = sys.stderr)
 
 def add_isolates(dic_list, db_name):
     for assembly in dic_list:
@@ -265,24 +327,26 @@ def add_isolates(dic_list, db_name):
         tmpf = open(fa_file, 'wt')
         SeqIO.write(new_seqs, tmpf, 'fasta')
         tmpf.close()
-        cmd = 'kraken-build --add-to-library {} --db {}'.format(fa_file, db_name)
-        print(cmd, file = sys.stderr)
-        cmd = shlex.split(cmd)
-        p = subprocess.check_output(cmd)
-        os.remove(fa_file)
+        kraken_add(db_name, fa_file)
+        # cmd = 'kraken-build --add-to-library {} --db {}'.format(fa_file, db_name)
+        # print(cmd, file = sys.stderr)
+        # cmd = shlex.split(cmd)
+        # p = subprocess.check_output(cmd)
+        # os.remove(fa_file)
     print("Added all {} assemblies to kraken stagging area. DB is ready to build".format(len(dic_list)), file = sys.stderr)
 
 ### ACTUALLY BUILD THE DATABASE ################################################
 
-def kraken_build(cmd, db_name, threads = 16, kmer_len = 31, minz_len = 15, clean = True):
-    cmd = cmd + ' --build --db {} --threads {} --kmer-len {} --minimizer-len {}'.format(db_name, threads, kmer_len, minz_len)
-    if clean:
-        cmd = cmd + ' --clean'
+def kraken_build(db_name, threads = 16, kmer_len = 31, minz_len = 15, clean = True):
+    cmd = 'kraken-build --build --db {} --threads {} --kmer-len {} --minimizer-len {}'.format(db_name, threads, kmer_len, minz_len)
     print(cmd, file = sys.stderr)
     p = subprocess.Popen( shlex.split(cmd))
     p.communicate()
+    if clean:
+        cmd = 'kraken-build --clean --db {}'.format(db_name)
+        p = subprocess.Popen( shlex.split(cmd))
+        p.communicate()
     print("Finished building the database.", file = sys.stderr)
-
 
 ### GENERATE A LOG OF SEQUENCES ADDED TO THE DATABASE ##########################
 
@@ -296,21 +360,30 @@ def generate_log(dic_list):
         fo.write(row)
     fo.close()
 
-
-
 @click.command()
 @click.option("--assemb_file", help = "assembly_summary file")
 @click.option("--kraken_db", help = "name of kraken db")
-@click.option("--create", "-c", help = "create a new database")
+@click.option("--create", "-c", help = "create a new database at path <give path>", default = None)
+@click.option("--kraken_db_path", help = "path to kraken db", default = '.')
 @click.option("--taxon_list", help = "give it a taxon list to filter the assembly_summary.", default = None)
 @click.option("--include_human", help = "include the human reference genome", is_flag = True)
 @click.option("--filter_opt", help = "Can be all, strict, moderate, or liberal.", default = 'strict')
 @click.option("--outdir", help = "Where to place downloaded genomes.", default = ".")
 @click.option("--no_log", help = 'Do NOT output a tab-delimited list of genomes added', is_flag = True)
-@click.option("--do_no_inject_adapters", help = "Do **not** add Illumina adapter and primer sequences to DB", is_flag = True, default = False)
-def kraken_trawl(assemb_file, kraken_db, create, taxon_list, include_human, filter_opt, outdir, no_log, inject_adapters):
+@click.option("--do_not_inject_adapters", help = "Do **not** add Illumina adapter and primer sequences to DB", is_flag = True, default = False)
+@click.option("--threads", help = 'How many threads to use when building the database', default = 16)
+@click.option("--kmer_len", help = 'kmer length to use when building database', default = 31)
+@click.option("--minz_len", help = 'minimizer length to use when building database', default = 15)
+@click.option("--clean", help = 'clean db of unnecessary files after making the DB', default = True, is_flag = True)
+def kraken_trawl(assemb_file, kraken_db, create, kraken_db_path, taxon_list, include_human, filter_opt, outdir, no_log, do_not_inject_adapters, threads, kmer_len, minz_len, clean ):
     aspera_cmd = check_aspera_exists()
     kraken_cmd = check_kraken_exists()
+    if create != None:
+        kraken_db_path = create_kraken_db_folder(create, kraken_db, aspera_cmd, taxonomy_files)
+    if kraken_db_path == '.':
+        kraken_db_path = os.getcwd()
+    if not do_not_inject_adapters:
+        inject_adapters(kraken_db)
     if outdir == '.':
         outdir = os.getcwd()
     assembs_raw = load_assembly_table(assemb_file)
@@ -328,10 +401,11 @@ def kraken_trawl(assemb_file, kraken_db, create, taxon_list, include_human, filt
     n_assemblies = assembs.shape[0]
     print("Total assemblies found: {}".format(n_assemblies), file = sys.stderr)
     print("Total assemblies expected: {}".format(len(taxon_list)), file = sys.stderr)
-    # assemb_dic_list = download_gbk( assembs, aspera_cmd, outdir = outdir)
-    # add_isolates(assemb_dic_list, kraken_db)
-    # if not no_log:
-    #     generate_log(assemb_dic_list)
+    assemb_dic_list = download_gbk( assembs, aspera_cmd, outdir = outdir)
+    add_isolates(assemb_dic_list, kraken_db)
+    if not no_log:
+        generate_log(assemb_dic_list)
+    kraken_build(kraken_db, threads = threads, kmer_len = kmer_len, minz_len = minz_len, clean = clean )
 
 if __name__ == '__main__':
     kraken_trawl()
