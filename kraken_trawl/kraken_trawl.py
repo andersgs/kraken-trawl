@@ -82,8 +82,6 @@ def create_kraken_db_folder(path, db_name, cmd, ncbi_taxonomy_files ):
         os.path.join(db_path, 'taxonomy' )
     ]
 
-    print("Folders: {}".format( folders_to_make ))
-
     try:
         for folder in folders_to_make:
             os.mkdir(folder)
@@ -192,6 +190,10 @@ def filter_assemblies(taxon_list, assembl_tab, filter_opt ='strict'):
     org_name = assembl_tab.organism_name
     filtered = []
     missing = []
+    # this addresses the issue of assemblies that do not have a specified path in the file
+    ix_missing_ftp_path = ~assembl_tab.ftp_path.isin(['na'])
+    assembl_tab = assembl_tab[ix_missing_ftp_path]
+    print("Total assemblies missing an ftp path was {}.".format(sum(ix_missing_ftp_path)))
     for taxon in taxon_list:
         ix = org_name.str.match(taxon)
         # make sure there is at least one hit
