@@ -42,6 +42,23 @@ points to the aspera key for downloading from `NCBI`. For a guide on obtaining
 
 ## Installation
 
+The easiest way of installing `kraken-trawl` is using `pip`:
+
+`pip install git+https://github.com/andersgs/kraken-trawl.git`
+
+Use the `--user` option to install locally:
+
+`pip install --user git+https://github.com/andersgs/kraken-trawl.git`
+
+Use the `--install-option` to install the script in a particular location:
+
+`pip install --install-option="--install-scripts=$HOME/bin" --user git+hhttps://github.com/andersgs/kraken-trawl.git`
+
+Once installed type the following:
+
+`kraken-trawl --help`
+
+
 ## Configuration
 
 The current version relies on an environmental variable to work properly:
@@ -62,18 +79,19 @@ is currently considered best practice in tool development. More here: [12factor 
 Usage: kraken-trawl [OPTIONS]
 
 Options:
-  --assemb_file TEXT       assembly_summary file
-  --kraken_db TEXT         name of kraken db
-  -c, --create TEXT        create a new database
-  --taxon_list TEXT        give it a taxon list to filter the
-                           assembly_summary.
-  --include_human          include the human reference genome
-  --filter_opt TEXT        Can be all, strict, moderate, or liberal.
-  --outdir TEXT            Where to place downloaded genomes.
-  --no_log                 Do NOT output a tab-delimited list of genomes added
+  --assemb_file TEXT        assembly_summary file
+  --kraken_db TEXT          name of kraken db                                                                                                         -c, --create TEXT         create a new database at path <give path>
+  --kraken_db_path TEXT     path to kraken db                                                                                                         --taxon_list TEXT         give it a taxon list to filter the
+                            assembly_summary.                                                                                                         --include_human           include the human reference genome
+  --filter_opt TEXT         Can be all, strict, moderate, or liberal.                                                                                 --outdir TEXT             Where to place downloaded genomes.
+  --no_log                  Do NOT output a tab-delimited list of genomes                                                                                                       added
   --do_not_inject_adapters  Do **not** add Illumina adapter and primer
-                           sequences to DB
-  --help                   Show this message and exit.
+                            sequences to DB
+  --threads INTEGER         How many threads to use when building the database
+  --kmer_len INTEGER        kmer length to use when building database
+  --minz_len INTEGER        minimizer length to use when building database
+  --clean                   clean db of unnecessary files after making the DB
+  --help                    Show this message and exit.
 ```
 
 ## Output
