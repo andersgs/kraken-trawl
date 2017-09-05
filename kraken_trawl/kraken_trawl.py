@@ -323,7 +323,7 @@ def download_gbk(assemb_tab, cmd, outdir = '.'):
     p.communicate()
     files_to_check = [a['gbk_file'] for a in assembs_dic_list]
     was_updated = parse_aspera_manifest_file(outdir, files_to_check, "aspera_assemblies_manifest.txt")
-    print("Finisehd downloading all genomes.", file = sys.stderr)
+    print("Finished downloading all genomes.", file = sys.stderr)
     return assembs_dic_list
 
 ### LOADING GENOMES TO THE KRAKEN STAGGING AREA ################################
