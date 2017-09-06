@@ -11,12 +11,11 @@ import re
 import shlex
 import gzip
 from Bio import SeqIO
-from Bio import Entrez
-import tempfile
 import sys
 import pkg_resources
+import logging
 
-### SOME CONSTANTS #############################################################
+# SOME CONSTANTS #############################################################
 
 ncbi_host = 'ftp-private.ncbi.nlm.nih.gov'
 ncbi_user = 'anonftp'
@@ -27,7 +26,7 @@ taxonomy_files = [
 ]
 
 assembly_files = {
-    'general':'/genomes/ASSEMBLY_REPORTS/assembly_summary_genbank.txt',
+    'general': '/genomes/ASSEMBLY_REPORTS/assembly_summary_genbank.txt',
     'refseq': '/genomes/ASSEMBLY_REPORTS/assembly_summary_refseq.txt',
     'archea': '/genomes/refseq/archaea/assembly_summary.txt',
     'bacteria': '/genomes/refseq/bacteria/assembly_summary.txt',
@@ -39,39 +38,57 @@ plamids = {
     'plasmid2': '/refseq/release/plasmid/plasmid.2.genomic.gbff.gz'
 }
 
-### SOME BASIC CHECK FUNCTIONS  ################################################
+# SOME BASIC CHECK FUNCTIONS  ################################################
+
 
 def check_aspera_exists():
+    '''
+    Check if aspera and aspera key are available. If so, return a string
+    with the command.
+    '''
     cmd = 'ascp'
     try:
-        p = subprocess.check_output( [cmd, '--help'] )
-        print("Found ascp", file = sys.stderr)
+        subprocess.check_output([cmd, '--help'])
+        logging.info("Found ascp...")
     except:
-        print("Could not find ascp.", file = sys.stderr)
+        logging.critical("Could not find ascp.")
         raise IOError
     try:
         aspera_key = os.environ['ASPERA_KEY']
-        print("Found the ASPERA key", file = sys.stderr)
+        logging.info("Found the ASPERA key")
     except:
-        print("Could not find the ASPERA_KEY Environment variable.", file = sys.stderr)
+        logging.critical("Could not find the ASPERA_KEY Environment variable.")
         raise IOError
-    cmd = cmd + ' -d --overwrite=diff -k2 -i ' + aspera_key + ' -Q -k1 -T -l500m --host=ftp-private.ncbi.nlm.nih.gov --user=anonftp --mode=recv --file-manifest=text --file-manifest-path={} --file-pair-list={} {}'
+    cmd += ' -d --overwrite=diff -k2 -i '\
+        + aspera_key\
+        + ' -Q -k1 -T -l500m --host=ftp-private.ncbi.nlm.nih.gov '\
+        '--user=anonftp --mode=recv --file-manifest=text '\
+        '--file-manifest-path={} --file-pair-list={} {}'
     return(cmd)
+
 
 def check_kraken_exists():
+    '''
+    Check if kraken exists, and if so return a string with the command.
+    '''
     cmd = 'kraken'
     try:
-        p = subprocess.check_output( [cmd, '--help'], stderr = subprocess.PIPE )
-        print("Found kraken", file = sys.stderr)
+        subprocess.check_output([cmd, '--help'], stderr=subprocess.PIPE)
+        logging.info("Found kraken...")
     except:
-        print("Please install kraken", file = sys.stderr)
+        logging.critical("Please install kraken...")
         raise IOError
     return(cmd)
 
-### SOME SETTING THE SCENE FUNCTIONS ###########################################
+# SOME SETTING THE SCENE FUNCTIONS ###########################################
+
 
 def parse_aspera_manifest_file(path, files, new_name):
-    manifest_file = [f for f in os.listdir(path) if re.match("aspera-transfer", f)][0]
+    '''
+    Check the Aspera manifest file for any updates
+    '''
+    manifest_file = [f for f in os.listdir(path)
+                     if re.match("aspera-transfer", f)][0]
     was_updated = {}
     try:
         fi = open(manifest_file, 'r')
@@ -84,67 +101,76 @@ def parse_aspera_manifest_file(path, files, new_name):
             else:
                 was_updated[f] = True
     except:
-        print("Something went wrong when parsing the aspera transfer manifest file")
+        logging.critical("Something went wrong when parsing "
+                         "the aspera transfer manifest file")
         raise IOError
     os.rename(manifest_file, new_name)
     return was_updated
 
-def create_kraken_db_folder(path, db_name, cmd, ncbi_taxonomy_files ):
+
+def create_kraken_db_folder(path, db_name, cmd, ncbi_taxonomy_files):
     '''
-    A function to create the folder structure for a new kraken database, if needed
+    A function to create the folder structure for a new kraken database
     '''
-    db_path = os.path.join( os.path.abspath(path), db_name)
+    db_path = os.path.join(os.path.abspath(path), db_name)
     folders_to_make = [
         db_path,
-        os.path.join(db_path, 'library' ),
-        os.path.join(db_path, 'library', 'added' ),
-        os.path.join(db_path, 'taxonomy' )
+        os.path.join(db_path, 'library'),
+        os.path.join(db_path, 'library', 'added'),
+        os.path.join(db_path, 'taxonomy')
     ]
-
     try:
         for folder in folders_to_make:
             os.mkdir(folder)
     except:
-        print("Necessary folders for kraken DB {} already exist. Proceeding will overwrite somethings.".format(db_name), file = sys.stderr)
-        #raise IOError
-
+        logging.warning("Necessary folders for kraken DB {} already exist. "
+                        "Proceeding will overwrite a few things."
+                        .format(db_name))
     fo = open("aspera_taxonomy_src_dest.txt", 'w')
     files_to_unzip = []
     for fi in ncbi_taxonomy_files:
         fi_name = os.path.basename(fi)
         fi_dest = fi_name
-        fo.write('{}\n{}\n'.format(fi,fi_dest))
+        fo.write('{}\n{}\n'.format(fi, fi_dest))
         files_to_unzip.append(fi_dest)
     fo.close()
-    cmd = cmd.format(path, "aspera_taxonomy_src_dest.txt", os.path.join( db_name, 'taxonomy'))
-    print(cmd, file = sys.stderr)
-    p = subprocess.Popen( shlex.split(cmd))
+    cmd = cmd.format(path, "aspera_taxonomy_src_dest.txt",
+                     os.path.join(db_name, 'taxonomy'))
+    logging.info("Running {}".format(cmd))
+    p = subprocess.Popen(shlex.split(cmd))
     p.communicate()
-    was_updated = parse_aspera_manifest_file(path, files_to_unzip, "aspera_taxonomy_manifest.txt")
+    was_updated = parse_aspera_manifest_file(path,
+                                             files_to_unzip,
+                                             "aspera_taxonomy_manifest.txt")
     for fi in files_to_unzip:
-        path_to_file = os.path.join( db_name, 'taxonomy', fi)
+        path_to_file = os.path.join(db_name, 'taxonomy', fi)
         if re.search('tar', fi):
             if was_updated[fi]:
-                path_to_folder = os.path.join( db_name, 'taxonomy')
+                path_to_folder = os.path.join(db_name, 'taxonomy')
                 cmd = 'tar xzvf {} -C {}'.format(path_to_file, path_to_folder)
-                print(cmd, file = sys.stderr)
-                p = subprocess.Popen( shlex.split(cmd))
+                logging.info("Running {}".format(cmd))
+                p = subprocess.Popen(shlex.split(cmd))
                 p.communicate()
             else:
-                print("File {} was not updated in this transfer. Nothing to do.".format(fi), file = sys.stderr)
+                logging.info("File {} was not updated in this "
+                             "transfer. Nothing to do.".format(fi))
         else:
             if was_updated[fi]:
                 outfilename = fi.rstrip('.gz')
-                path_to_outfile = os.path.join( db_name, 'taxonomy', outfilename)
-                cmd = 'gunzip -c {} > {}'.format( path_to_file, path_to_outfile )
-                print(cmd, file = sys.stderr)
-                p = subprocess.Popen( cmd, shell = True)
+                path_to_outfile = os.path.join(db_name,
+                                               'taxonomy',
+                                               outfilename)
+                cmd = 'gunzip -c {} > {}'.format(path_to_file, path_to_outfile)
+                logging.info("Running {}".format(cmd))
+                p = subprocess.Popen(cmd, shell=True)
                 p.communicate()
             else:
-                print("File {} was not updated in this transfer. Nothing to do.".format(fi), file = sys.stderr)
+                logging.info("File {} was not updated in this transfer. "
+                             "Nothing to do.".format(fi))
     return db_path
 
-### SOME FILE LOADING FUNCTIONS ################################################
+# SOME FILE LOADING FUNCTIONS ################################################
+
 
 def load_assembly_table(infile):
     '''
@@ -155,12 +181,13 @@ def load_assembly_table(infile):
     ## TODO ##
     Add functionality to download file from Genbank
     '''
-    print("Loading assembly table", file = sys.stderr)
+    logging.info("Loading assembly table")
     try:
-        return( pd.read_csv( infile, skiprows = 1, sep = '\t' ) )
+        return pd.read_csv(infile, skiprows=1, sep='\t')
     except:
-        print("Could load assembly table.", file = sys.stderr)
+        logging.critical("Could load assembly table.")
         raise IOError
+
 
 def load_taxon_list(taxon_list):
     '''
@@ -181,20 +208,23 @@ def load_taxon_list(taxon_list):
         fi.close()
         # If searching for genus name, we want to make sure it matches exactly
         # the genus name, so must add a trailling white space
-        genus_list = [taxon + ' ' for taxon in taxon_list if len(taxon.split()) == 1]
-        species_list = [taxon for taxon in taxon_list if len(taxon.split()) > 1]
+        genus_list = [taxon + ' ' for taxon in taxon_list
+                      if len(taxon.split()) == 1]
+        species_list = [taxon for taxon in taxon_list
+                        if len(taxon.split()) > 1]
         genus_list.extend(species_list)
         taxon_list = genus_list
     except:
-        print("Could not load the taxon list!", file = sys.stderr)
+        logging.critical("Could not load the taxon list!")
         raise IOError
     return taxon_list
 
-### LET US GET SOME GENOMES ####################################################
+
+# LET US GET SOME GENOMES ####################################################
 
 
-### RUN THIS FUNCTION IF A TAXON_LIST IS PROVIDED ##############################
-def filter_assemblies(taxon_list, assembl_tab, filter_opt ='strict'):
+# RUN THIS FUNCTION IF A TAXON_LIST IS PROVIDED ##############################
+def filter_assemblies(taxon_list, assembl_tab, filter_opt='strict'):
     '''
     Takes two inputs: the taxon list and the assembly table.
     It will output a filterd assembly table.
@@ -204,12 +234,12 @@ def filter_assemblies(taxon_list, assembl_tab, filter_opt ='strict'):
 
     Filtering options:
         * 'strict' --- take only reference genomes, if available. This is
-                        indicated by a non-NA in the  `refseq_category` column (
-                        current other options are 'reference genome' or
-                        'representative genome'
-                        )
+                        indicated by a non-NA in the  `refseq_category` column
+                        (current other options are 'reference genome' or
+                        'representative genome')
         * 'moderate' --- take reference genomes, if available. If not, accept
-                        'Chromosome' or 'Complete Genome' in the assembly_level column
+                        'Chromosome' or 'Complete Genome' in the assembly_level
+                        column
 
         * 'liberal' --- if all other filters fail, then accept 'Scaffold' and
                         'Contig' assemblies in the assembly_level column
@@ -219,25 +249,30 @@ def filter_assemblies(taxon_list, assembl_tab, filter_opt ='strict'):
     org_name = assembl_tab.organism_name
     filtered = []
     missing = []
-    # this addresses the issue of assemblies that do not have a specified path in the file
+    # this addresses the issue of assemblies that do not have a specified
+    # path in the file
     ix_missing_ftp_path = ~assembl_tab.ftp_path.isin(['na'])
     assembl_tab = assembl_tab[ix_missing_ftp_path]
-    print("Total assemblies missing an ftp path was {}.".format(sum(ix_missing_ftp_path)))
+    logging.info("Total assemblies missing an ftp path was {}."
+                 .format(sum(ix_missing_ftp_path)))
     for taxon in taxon_list:
         ix = org_name.str.match(taxon)
         # make sure there is at least one hit
         n_hits = sum(ix)
         if(n_hits == 0):
             missing.append(taxon)
-            print("Did **not** find any genomes for {}".format(taxon), file=sys.stderr)
-            print("If you believe it should be there, please check the spelling!".format(taxon), file=sys.stderr)
-            print("Skipping to next taxon...".format(taxon), file=sys.stderr)
+            logging.warning("Did *not* find any genomes for {}"
+                            .format(taxon))
+            logging.warning("If you believe it should be there, "
+                            "please check the spelling!".format(taxon))
+            logging.warning("Skipping to next taxon...".format(taxon))
             continue
         else:
             print("Found {} hits to {}".format(n_hits, taxon))
             taxon_tab = assembl_tab[ix]
         if filter_opt == 'all':
-            print("You chose to export **all** {} assemblies for {}.".format(n_hits, taxon), file = sys.stderr)
+            logging.warning("You chose to export **all** {} assemblies for {}."
+                            .format(n_hits, taxon))
             filtered.append(taxon_tab)
             continue
         else:
@@ -246,36 +281,52 @@ def filter_assemblies(taxon_list, assembl_tab, filter_opt ='strict'):
             ix = refseq_cat.isin(['reference genome', 'representative genome'])
             n_hits = sum(ix)
             if n_hits > 0:
-                print("Found {} hits for {} in refseq.".format(n_hits, taxon))
+                logging.info("Found {} hits for {} in refseq."
+                             .format(n_hits, taxon))
                 refseq_tab = taxon_tab[ix]
                 filtered.append(refseq_tab)
                 continue
             elif filter_opt in ['moderate', 'liberal']:
-                print("Did **not** find any reference genomes for {}.".format(taxon), file = sys.stderr)
-                print("As per your request, I am moving in to unknown territory!")
-                asm_level= taxon_tab.assembly_level
+                logging.warning("Did *not* find any reference genomes for {}."
+                                .format(taxon))
+                logging.warning("As per your request, "
+                                "I am moving in to unknown territory!")
+                asm_level = taxon_tab.assembly_level
                 ix = asm_level.isin(['Chromosome', 'Complete Genome'])
                 n_hits = sum(ix)
                 if n_hits > 0:
-                    print("Found {} Chromosome/Complete Genome hits for {}".format(n_hits, taxon), file = sys.stderr)
+                    logging.info("Found {} Chromosome/Complete Genome "
+                                 "hits for {}".format(n_hits, taxon))
                     complete_tab = taxon_tab[ix]
                     filtered.append(complete_tab)
                 elif filter_opt == 'liberal':
-                    ix = asm_level.isin(['Scaffold','Contig'])
+                    ix = asm_level.isin(['Scaffold', 'Contig'])
                     n_hits = sum(ix)
                     if n_hits > 0:
-                        print("Found {} Scaffold/Contig hits for {}.".format(n_hits, taxon, file = sys.stderr))
+                        logging.info("Found {} Scaffold/Contig hits for {}."
+                                     .format(n_hits, taxon))
                         scaffolds_tab = taxon_tab[ix]
                         filtered.append(scaffolds_tab)
                     else:
-                        print("We seem to have a problem! Even with the most liberal of searchers, I was still unable to find a genome for {}. IF YOU SEE THIS MESSAGE, PLEASE REPORT IT!".format(taxon), file = sys.stderr)
+                        logging.critical("We seem to have a problem! "
+                                         "Even with the most liberal of "
+                                         "searchers, I was still unable to "
+                                         "find a genome for {}. "
+                                         "IF YOU SEE THIS MESSAGE, "
+                                         "PLEASE REPORT IT!".format(taxon))
                 else:
-                    print("I was unable to find any assemblies for {} that fitted your filtering options!".format(taxon), file = sys.stderr)
-                    print("Moving on to the next taxon...", file = sys.stderr)
+                    logging.warning("I was unable to find any assemblies "
+                                    "for {} that fitted your filtering "
+                                    "options!".format(taxon))
+                    logging.warning("Moving on to the next taxon...")
             else:
-                print("I could **not** find any hits for {} in refseq. If you are feeling adventurous, perhaps loosen your search criteria.".format(taxon), file = sys.stderr)
+                logging.warning("I could *not* find any hits for {} in "
+                                "refseq. If you are feeling adventurous, "
+                                "perhaps loosen your search criteria."
+                                .format(taxon))
     out_tab = pd.concat(filtered)
-    print("For {} taxa, I found {} assemblies.".format(len(taxon_list), out_tab.shape[0]), file = sys.stderr)
+    logging.info("For {} taxa, I found {} assemblies."
+                 .format(len(taxon_list), out_tab.shape[0]))
     if len(missing) > 0:
         fo = open("missing_taxon.txt", 'w')
         for m in missing:
@@ -283,22 +334,29 @@ def filter_assemblies(taxon_list, assembl_tab, filter_opt ='strict'):
         fo.close()
     return(out_tab)
 
-### RUN THIS FUNCTION ON A TABLE OF ASSEMBLIES #################################
-
-def parse_aseemb_rows(row):
-    print("Prepping {} for download.".format(row.organism_name), file = sys.stderr)
+# RUN THIS FUNCTION ON A TABLE OF ASSEMBLIES #################################
+def parse_assemb_rows(row):
+    '''
+    Parse an assembly_summary row
+    '''
+    logging.info("Prepping {} for download.".format(row.organism_name))
     assemb_dict = {}
     assemb_dict['organism'] = row.organism_name
-    assemb_dict['path'] = re.findall(pattern='ftp://ftp.ncbi.nlm.nih.gov(/.*)$', string=row.ftp_path)[0]
-    assemb_dict['asm_name'] = os.path.basename(assemb_dict['path'] )
+    assemb_dict['path'] = re.findall(
+                                    pattern='ftp://ftp.ncbi.nlm.nih.gov(/.*)$',
+                                    string=row.ftp_path)[0]
+    assemb_dict['asm_name'] = os.path.basename(assemb_dict['path'])
     assemb_dict['gbk_file'] = assemb_dict['asm_name'] + '_genomic.gbff.gz'
-    assemb_dict['dest'] = os.path.join( assemb_dict['asm_name'], assemb_dict['gbk_file'])
-    assemb_dict['source'] = assemb_dict['path']  + '/' + assemb_dict['gbk_file']
+    assemb_dict['dest'] = os.path.join(assemb_dict['asm_name'],
+                                       assemb_dict['gbk_file'])
+    assemb_dict['source'] = '/'.join([assemb_dict['path'],
+                                     assemb_dict['gbk_file']])
     assemb_dict['ref_status'] = row.refseq_category
     assemb_dict['asm_level'] = row.assembly_level
     return assemb_dict
 
-def download_gbk(assemb_tab, cmd, outdir = '.'):
+
+def download_gbk(assemb_tab, cmd, outdir='.'):
     '''
     This should take a list of accessions and paths, and produce a
     source/destination pairs file.
@@ -312,35 +370,49 @@ def download_gbk(assemb_tab, cmd, outdir = '.'):
     '''
 
     fo = open("aspera_assemblies_src_dest.txt", 'w')
-    assembs_dic_list = [parse_aseemb_rows(row) for row in assemb_tab.itertuples()]
+    assembs_dic_list = [parse_assemb_rows(row) for
+                        row in assemb_tab.itertuples()]
     for assembly in assembs_dic_list:
         fo.write("{}\n{}\n".format(assembly['source'], assembly['dest']))
     fo.close()
 
     cmd = cmd.format(outdir, 'aspera_assemblies_src_dest.txt', outdir)
-    print("Running the aspera cmd: {}".format(cmd), file = sys.stderr)
-    p = subprocess.Popen( shlex.split(cmd))
+    logging.info("Running {}".format(cmd))
+    p = subprocess.Popen(shlex.split(cmd))
     p.communicate()
     files_to_check = [a['gbk_file'] for a in assembs_dic_list]
-    was_updated = parse_aspera_manifest_file(outdir, files_to_check, "aspera_assemblies_manifest.txt")
-    print("Finished downloading all genomes.", file = sys.stderr)
+    was_updated = parse_aspera_manifest_file(outdir,
+                                             files_to_check,
+                                             "aspera_assemblies_manifest.txt")
+    logging.info("Finished downloading all genomes.")
     return assembs_dic_list
 
-### LOADING GENOMES TO THE KRAKEN STAGGING AREA ################################
 
-def kraken_add(db_name, fasta_file, clean = True):
-    cmd = "kraken-build --add-to-library {} --db {}".format( fasta_file, db_name )
-    print(cmd, file = sys.stderr)
+# LOADING GENOMES TO THE KRAKEN STAGGING AREA ################################
+def kraken_add(db_name, fasta_file, clean=True):
+    '''
+    Add a FASTA sequence to the staging area in Kraken
+    '''
+    cmd = "kraken-build --add-to-library {} --db {}".format(fasta_file,
+                                                            db_name)
+    logging.info("Running {}".format(cmd))
     cmd = shlex.split(cmd)
-    p = subprocess.check_output(cmd)
+    subprocess.check_output(cmd)
     if clean:
         os.remove(fasta_file)
 
+
 def inject_adapters(db_name):
-    adapter_fasta = pkg_resources.resource_filename(__name__, os.path.join("data", "adapter.fasta"))
-    print(adapter_fasta, file = sys.stderr)
+    '''
+    Inject adapter sequences in to the Kraken DB
+    '''
+    adapter_fasta = pkg_resources.resource_filename(__name__,
+                                                    os.path.join("data",
+                                                                 "adapter.fasta"))
+    logging.debug("Found adapter files here: {}.".format(adapter_fasta))
     kraken_add(db_name, adapter_fasta, False)
-    print("Added Illumina adapters to {}".format(db_name), file = sys.stderr)
+    logging.info("Added Illumina adapters to {}".format(db_name))
+
 
 def add_isolates(dic_list, db_name):
     for assembly in dic_list:
